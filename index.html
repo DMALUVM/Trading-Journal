@@ -28,6 +28,9 @@
             #calendar { font-size: 14px; }
             button { width: 100%; margin-bottom: 10px; }
         }
+        .exit-row { display: flex; gap: 10px; align-items: center; }
+        .exit-row input { flex: 1; }
+        .remove-exit { cursor: pointer; color: red; }
     </style>
 </head>
 <body>
@@ -43,15 +46,19 @@
         let trades = JSON.parse(localStorage.getItem('trades')) || {};
 
         const multipliers = {
-            'ES': 50, 'MES': 5, 'NQ': 20, 'MNQ': 2 // Add more symbols as needed
+            'ES': 50, 'MES': 5, 'NQ': 20, 'MNQ': 2 // Add more as needed
         };
 
         function calculatePL(trade) {
-            if (!trade.entryPrice || !trade.exitPrice || !trade.contracts || !trade.symbol) return parseFloat(trade.profitLoss) || 0;
+            if (!trade.exits || trade.exits.length === 0 || !trade.entryPrice || !trade.symbol) return 0;
             const direction = trade.longShort === 'long' ? 1 : -1;
-            const priceDiff = (parseFloat(trade.exitPrice) - parseFloat(trade.entryPrice)) * direction;
+            let pl = 0;
             const multiplier = multipliers[trade.symbol.toUpperCase()] || 1;
-            return priceDiff * multiplier * parseInt(trade.contracts);
+            trade.exits.forEach(exit => {
+                const priceDiff = (parseFloat(exit.price) - parseFloat(trade.entryPrice)) * direction;
+                pl += priceDiff * parseInt(exit.contracts) * multiplier;
+            });
+            return pl;
         }
 
         function saveTrades() {
@@ -174,21 +181,26 @@
 
         function renderTradeDetails(div, trade, date, index) {
             const pl = calculatePL(trade);
+            let exitsHtml = '<p><strong>Exits:</strong></p><ul>';
+            if (trade.exits && trade.exits.length > 0) {
+                trade.exits.forEach(exit => {
+                    exitsHtml += `<li>${exit.contracts} contracts at ${exit.price}</li>`;
+                });
+            } else {
+                exitsHtml += '<li>None</li>';
+            }
+            exitsHtml += '</ul>';
             div.innerHTML = `
                 <p><strong>Long/Short:</strong> ${trade.longShort}</p>
                 <p><strong>Symbol:</strong> ${trade.symbol}</p>
-                <p><strong>Contracts:</strong> ${trade.contracts}</p>
+                <p><strong>Total Contracts:</strong> ${trade.totalContracts}</p>
                 <p><strong>Entry Price:</strong> ${trade.entryPrice || 'N/A'}</p>
-                <p><strong>Exit Price:</strong> ${trade.exitPrice || 'N/A'}</p>
-                <p><strong>Stop Loss:</strong> ${trade.stopLoss || 'N/A'}</p>
-                <p><strong>Take Profit:</strong> ${trade.takeProfit || 'N/A'}</p>
+                ${exitsHtml}
                 <p><strong>Time in Trade:</strong> ${trade.timeInTrade}</p>
                 <p><strong>Time of Day:</strong> ${trade.timeOfDay}</p>
                 <p><strong>Above/Below VWAP:</strong> ${trade.vwap}</p>
                 <p><strong>CBC Signal on 10 min:</strong> ${trade.cbc ? 'Yes' : 'No'}</p>
                 <p><strong>Entry Near 20 EMA on 2 min:</strong> ${trade.ema ? 'Yes' : 'No'}</p>
-                <p><strong>Strategy Type:</strong> ${trade.strategyType || 'N/A'}</p>
-                <p><strong>Emotional State:</strong> ${trade.emotionalState || 'N/A'}</p>
                 <p><strong>Profit/Loss:</strong> ${pl.toFixed(2)}</p>
                 <p><strong>Notes:</strong> ${trade.notes.replace(/\n/g, '<br>')}</p>
             `;
@@ -245,18 +257,13 @@
             const fields = [
                 {label: 'Long/Short', name: 'longShort', type: 'select', options: ['long', 'short']},
                 {label: 'Symbol', name: 'symbol', type: 'text'},
-                {label: 'Number of Contracts', name: 'contracts', type: 'number'},
+                {label: 'Total Contracts', name: 'totalContracts', type: 'number'},
                 {label: 'Entry Price', name: 'entryPrice', type: 'number', step: '0.01'},
-                {label: 'Exit Price', name: 'exitPrice', type: 'number', step: '0.01'},
-                {label: 'Stop Loss', name: 'stopLoss', type: 'number', step: '0.01'},
-                {label: 'Take Profit', name: 'takeProfit', type: 'number', step: '0.01'},
                 {label: 'Time in Trade', name: 'timeInTrade', type: 'text'},
                 {label: 'Time of Day', name: 'timeOfDay', type: 'time'},
                 {label: 'Price Above/Below VWAP', name: 'vwap', type: 'select', options: ['above', 'below']},
                 {label: 'CBC Signal on 10 min', name: 'cbc', type: 'checkbox'},
                 {label: 'Entry Near 20 EMA on 2 min', name: 'ema', type: 'checkbox'},
-                {label: 'Strategy Type', name: 'strategyType', type: 'text'},
-                {label: 'Emotional State', name: 'emotionalState', type: 'select', options: ['Confident', 'Neutral', 'Anxious', 'FOMO', 'Other']},
                 {label: 'Notes', name: 'notes', type: 'textarea'},
             ];
             fields.forEach(f => {
@@ -293,14 +300,63 @@
                 label.appendChild(input);
                 form.appendChild(label);
             });
+
+            const exitsSection = document.createElement('div');
+            exitsSection.innerHTML = '<h5>Exits</h5>';
+            const exitsContainer = document.createElement('div');
+            exitsContainer.id = 'exits-container';
+            let exitIndex = 0;
+
+            function addExitRow(price = '', contracts = '') {
+                const row = document.createElement('div');
+                row.className = 'exit-row';
+                const priceInput = document.createElement('input');
+                priceInput.type = 'number';
+                priceInput.step = '0.01';
+                priceInput.placeholder = 'Exit Price';
+                priceInput.value = price;
+                priceInput.className = 'form-control';
+                const contractsInput = document.createElement('input');
+                contractsInput.type = 'number';
+                contractsInput.placeholder = 'Contracts';
+                contractsInput.value = contracts;
+                contractsInput.className = 'form-control';
+                const remove = document.createElement('span');
+                remove.className = 'remove-exit';
+                remove.textContent = 'Remove';
+                remove.onclick = () => row.remove();
+                row.appendChild(priceInput);
+                row.appendChild(contractsInput);
+                row.appendChild(remove);
+                exitsContainer.appendChild(row);
+                exitIndex++;
+            }
+
+            const addExitBtn = document.createElement('button');
+            addExitBtn.type = 'button';
+            addExitBtn.className = 'btn btn-secondary mt-2';
+            addExitBtn.textContent = 'Add Exit';
+            addExitBtn.onclick = () => addExitRow();
+
+            if (trade.exits && trade.exits.length > 0) {
+                trade.exits.forEach(exit => addExitRow(exit.price, exit.contracts));
+            } else {
+                addExitRow(); // Add one by default
+            }
+
+            exitsSection.appendChild(exitsContainer);
+            exitsSection.appendChild(addExitBtn);
+            form.appendChild(exitsSection);
+
             const submit = document.createElement('button');
             submit.type = 'submit';
             submit.className = 'btn btn-success mt-3';
             submit.textContent = 'Save';
             form.appendChild(submit);
+
             form.onsubmit = e => {
                 e.preventDefault();
-                const newTrade = {};
+                const newTrade = { exits: [] };
                 fields.forEach(f => {
                     const inp = form.querySelector(`[name="${f.name}"]`);
                     if (f.type === 'checkbox') {
@@ -309,6 +365,20 @@
                         newTrade[f.name] = inp.value;
                     }
                 });
+                const exitRows = exitsContainer.querySelectorAll('.exit-row');
+                exitRows.forEach(row => {
+                    const price = row.querySelector('input[placeholder="Exit Price"]').value;
+                    const contracts = row.querySelector('input[placeholder="Contracts"]').value;
+                    if (price && contracts) {
+                        newTrade.exits.push({ price, contracts });
+                    }
+                });
+                // Optional: Validate sum of exit contracts <= totalContracts
+                const totalExited = newTrade.exits.reduce((sum, e) => sum + parseInt(e.contracts), 0);
+                if (totalExited > parseInt(newTrade.totalContracts)) {
+                    alert('Total exited contracts exceed total contracts!');
+                    return;
+                }
                 callback(newTrade);
             };
             return form;
@@ -318,13 +388,10 @@
             const summariesDiv = document.getElementById('summaries');
             summariesDiv.innerHTML = '';
             const now = new Date();
-            // YTD
             const ytdStart = new Date(now.getFullYear(), 0, 1);
             const ytd = calculatePeriod(ytdStart, now);
-            // Month
             const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
             const month = calculatePeriod(monthStart, now);
-            // Week
             const dayOfWeek = now.getDay();
             const weekStart = new Date(now);
             weekStart.setDate(now.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
@@ -386,11 +453,12 @@
         }
 
         function exportToCSV() {
-            let csv = 'Date,LongShort,Symbol,Contracts,EntryPrice,ExitPrice,StopLoss,TakeProfit,TimeInTrade,TimeOfDay,VWAP,CBC,EMA,StrategyType,EmotionalState,ProfitLoss,Notes\n';
+            let csv = 'Date,LongShort,Symbol,TotalContracts,EntryPrice,Exits,TimeInTrade,TimeOfDay,VWAP,CBC,EMA,ProfitLoss,Notes\n';
             Object.keys(trades).forEach(date => {
                 trades[date].forEach(trade => {
                     const pl = calculatePL(trade);
-                    csv += `${date},${trade.longShort},${trade.symbol},${trade.contracts},${trade.entryPrice},${trade.exitPrice},${trade.stopLoss},${trade.takeProfit},${trade.timeInTrade},${trade.timeOfDay},${trade.vwap},${trade.cbc ? 'Yes' : 'No'},${trade.ema ? 'Yes' : 'No'},${trade.strategyType},${trade.emotionalState},${pl},${trade.notes.replace(/\n/g, ' ')}\n`;
+                    const exitsStr = trade.exits ? trade.exits.map(e => `${e.contracts}@${e.price}`).join('; ') : '';
+                    csv += `${date},${trade.longShort},${trade.symbol},${trade.totalContracts},${trade.entryPrice},"${exitsStr}",${trade.timeInTrade},${trade.timeOfDay},${trade.vwap},${trade.cbc ? 'Yes' : 'No'},${trade.ema ? 'Yes' : 'No'},${pl},${trade.notes.replace(/\n/g, ' ')}\n`;
                 });
             });
             const blob = new Blob([csv], { type: 'text/csv' });
