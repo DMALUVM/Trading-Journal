@@ -4,18 +4,19 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Trade Journal</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
         body { font-family: Arial, sans-serif; margin: 20px; font-size: 16px; }
         #calendar { width: 100%; margin-bottom: 20px; overflow-x: auto; }
         table { border-collapse: collapse; width: 100%; }
         th, td { border: 1px solid #ddd; padding: 12px; text-align: center; }
-        .day-positive { background-color: lightgreen; }
-        .day-negative { background-color: lightcoral; }
+        .day-positive { background-color: #d4edda; }
+        .day-negative { background-color: #f8d7da; }
         .day-zero { background-color: white; }
         .clickable { cursor: pointer; }
         #summaries { width: 100%; max-width: 400px; border: 1px solid #ddd; padding: 10px; margin-bottom: 20px; }
         #day-view { border: 1px solid #ddd; padding: 10px; }
-        #day-view div { margin-bottom: 20px; padding: 10px; border: 1px solid #eee; }
+        #day-view .card { margin-bottom: 20px; }
         form { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
         form label { display: block; margin-bottom: 5px; }
         form textarea { width: 100%; height: 100px; }
@@ -27,13 +28,18 @@
             #calendar { font-size: 14px; }
             button { width: 100%; margin-bottom: 10px; }
         }
+        .conditions-section { grid-column: span 2; }
+        .a-plus { color: green; font-weight: bold; }
     </style>
 </head>
 <body>
-    <h1>Trade Journal</h1>
-    <div id="summaries"></div>
-    <div id="calendar"></div>
-    <div id="day-view"></div>
+    <div class="container">
+        <h1 class="mb-4">Trade Journal</h1>
+        <div id="summaries" class="card mb-4"></div>
+        <div id="calendar" class="mb-4"></div>
+        <div id="day-view"></div>
+        <button id="exportBtn" class="btn btn-secondary mt-3">Export to CSV</button>
+    </div>
 
     <script>
         let trades = JSON.parse(localStorage.getItem('trades')) || {};
@@ -45,14 +51,19 @@
         let currentYear = new Date().getFullYear();
         let currentMonth = new Date().getMonth();
 
+        function isAPlusSetup(trade) {
+            return trade.cbc10min && trade.cbc1h && trade.near20EMA && trade.liquiditySwept && trade.clearTarget && trade.emasAligned;
+        }
+
         function renderCalendar() {
             const calendarDiv = document.getElementById('calendar');
             calendarDiv.innerHTML = '';
 
             const nav = document.createElement('div');
-            nav.style.marginBottom = '10px';
+            nav.className = 'd-flex justify-content-between mb-3';
 
             const prev = document.createElement('button');
+            prev.className = 'btn btn-primary';
             prev.textContent = 'Prev Month';
             prev.onclick = () => {
                 currentMonth--;
@@ -61,6 +72,7 @@
             };
 
             const next = document.createElement('button');
+            next.className = 'btn btn-primary';
             next.textContent = 'Next Month';
             next.onclick = () => {
                 currentMonth++;
@@ -69,6 +81,7 @@
             };
 
             const todayBtn = document.createElement('button');
+            todayBtn.className = 'btn btn-primary';
             todayBtn.textContent = 'Today';
             todayBtn.onclick = () => {
                 const now = new Date();
@@ -83,6 +96,7 @@
             calendarDiv.appendChild(nav);
 
             const table = document.createElement('table');
+            table.className = 'table table-bordered';
             const thead = document.createElement('thead');
             const tr = document.createElement('tr');
             ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].forEach(d => {
@@ -108,13 +122,17 @@
                         const dayTrades = trades[dateStr] || [];
                         const count = dayTrades.length;
                         let pl = 0;
-                        dayTrades.forEach(t => pl += parseFloat(t.profitLoss) || 0);
-                        let className = 'day-zero';
-                        if (pl > 0) className = 'day-positive';
-                        else if (pl < 0) className = 'day-negative';
+                        let aPlusCount = 0;
+                        dayTrades.forEach(t => {
+                            pl += parseFloat(t.profitLoss) || 0;
+                            if (isAPlusSetup(t)) aPlusCount++;
+                        });
+                        let className = '';
+                        if (pl > 0) className = 'table-success';
+                        else if (pl < 0) className = 'table-danger';
                         cell.classList.add(className);
                         if (count > 0 || pl !== 0) cell.classList.add('clickable');
-                        cell.innerHTML = `${day}<br>${count} trades<br>${pl.toFixed(2)}`;
+                        cell.innerHTML = `${day}<br>${count} trades<br>${pl.toFixed(2)}<br>A+: ${aPlusCount}`;
                         cell.onclick = () => showDay(dateStr);
                         day++;
                     }
@@ -125,7 +143,6 @@
             }
             table.appendChild(tbody);
             calendarDiv.appendChild(table);
-            console.log('Calendar rendered'); // Debug log
         }
 
         function showDay(date) {
@@ -138,31 +155,44 @@
             const dayTrades = trades[date] || [];
             dayTrades.forEach((trade, index) => {
                 const tradeDiv = document.createElement('div');
-                tradeDiv.id = `trade-${index}`;
-                renderTradeDetails(tradeDiv, trade, date, index);
+                tradeDiv.className = 'card';
+                const cardBody = document.createElement('div');
+                cardBody.className = 'card-body';
+                tradeDiv.appendChild(cardBody);
+                renderTradeDetails(cardBody, trade, date, index);
                 dayView.appendChild(tradeDiv);
             });
 
             const addBtn = document.createElement('button');
+            addBtn.className = 'btn btn-success mt-3';
             addBtn.textContent = 'Add Trade';
             addBtn.onclick = () => addTrade(date);
             dayView.appendChild(addBtn);
         }
 
         function renderTradeDetails(div, trade, date, index) {
+            const isAPlus = isAPlusSetup(trade);
             div.innerHTML = `
                 <p><strong>Long/Short:</strong> ${trade.longShort}</p>
                 <p><strong>Symbol:</strong> ${trade.symbol}</p>
                 <p><strong>Contracts:</strong> ${trade.contracts}</p>
                 <p><strong>Time in trade:</strong> ${trade.timeInTrade}</p>
                 <p><strong>Time of day:</strong> ${trade.timeOfDay}</p>
-                <p><strong>Above/Below VWAP:</strong> ${trade.vwap}</p>
-                <p><strong>CBC signal on 10 min:</strong> ${trade.cbc ? 'Yes' : 'No'}</p>
-                <p><strong>Entry near 20 EMA on 2 min:</strong> ${trade.ema ? 'Yes' : 'No'}</p>
+                <p><strong>Conditions aligned with trade direction:</strong></p>
+                <ul>
+                    <li>CBC on 10 min: ${trade.cbc10min ? 'Yes' : 'No'}</li>
+                    <li>CBC on 1h: ${trade.cbc1h ? 'Yes' : 'No'}</li>
+                    <li>Took trade near 20 EMA on 2 min: ${trade.near20EMA ? 'Yes' : 'No'}</li>
+                    <li>Liquidity in opposite direction recently swept: ${trade.liquiditySwept ? 'Yes' : 'No'}</li>
+                    <li>Clear price target with good R:R: ${trade.clearTarget ? 'Yes' : 'No'}</li>
+                    <li>EMAs on 2 min aligned: ${trade.emasAligned ? 'Yes' : 'No'}</li>
+                </ul>
+                <p><strong>A+ Setup:</strong> ${isAPlus ? 'Yes' : 'No'}</p>
                 <p><strong>Profit/Loss:</strong> ${trade.profitLoss}</p>
                 <p><strong>Notes:</strong> ${trade.notes.replace(/\n/g, '<br>')}</p>
             `;
             const editBtn = document.createElement('button');
+            editBtn.className = 'btn btn-primary me-2';
             editBtn.textContent = 'Edit';
             editBtn.onclick = () => {
                 div.innerHTML = '';
@@ -176,6 +206,7 @@
                 div.appendChild(form);
             };
             const delBtn = document.createElement('button');
+            delBtn.className = 'btn btn-danger';
             delBtn.textContent = 'Delete';
             delBtn.onclick = () => {
                 trades[date].splice(index, 1);
@@ -192,6 +223,9 @@
         function addTrade(date) {
             const dayView = document.getElementById('day-view');
             const formContainer = document.createElement('div');
+            formContainer.className = 'card mt-3';
+            const cardBody = document.createElement('div');
+            cardBody.className = 'card-body';
             const form = createForm(date, {}, (newTrade) => {
                 if (!trades[date]) trades[date] = [];
                 trades[date].push(newTrade);
@@ -200,7 +234,8 @@
                 renderCalendar();
                 renderSummaries();
             });
-            formContainer.appendChild(form);
+            cardBody.appendChild(form);
+            formContainer.appendChild(cardBody);
             dayView.appendChild(formContainer);
         }
 
@@ -212,9 +247,6 @@
                 {label: 'Number of Contracts', name: 'contracts', type: 'number'},
                 {label: 'Time in Trade', name: 'timeInTrade', type: 'text'},
                 {label: 'Time of Day', name: 'timeOfDay', type: 'time'},
-                {label: 'Price Above/Below VWAP', name: 'vwap', type: 'select', options: ['above', 'below']},
-                {label: 'CBC Signal on 10 min in Direction', name: 'cbc', type: 'checkbox'},
-                {label: 'Entry Near 20 EMA on 2 min', name: 'ema', type: 'checkbox'},
                 {label: 'Profit/Loss', name: 'profitLoss', type: 'number', step: '0.01'},
                 {label: 'Notes', name: 'notes', type: 'textarea'},
             ];
@@ -224,6 +256,7 @@
                 let input;
                 if (f.type === 'select') {
                     input = document.createElement('select');
+                    input.className = 'form-select';
                     f.options.forEach(opt => {
                         const option = document.createElement('option');
                         option.value = opt;
@@ -231,16 +264,14 @@
                         if (trade[f.name] === opt) option.selected = true;
                         input.appendChild(option);
                     });
-                } else if (f.type === 'checkbox') {
-                    input = document.createElement('input');
-                    input.type = 'checkbox';
-                    if (trade[f.name]) input.checked = true;
                 } else if (f.type === 'textarea') {
                     input = document.createElement('textarea');
+                    input.className = 'form-control';
                     input.value = trade[f.name] || '';
                 } else {
                     input = document.createElement('input');
                     input.type = f.type;
+                    input.className = 'form-control';
                     if (f.step) input.step = f.step;
                     input.value = trade[f.name] || '';
                 }
@@ -248,8 +279,34 @@
                 label.appendChild(input);
                 form.appendChild(label);
             });
+
+            const conditionsSection = document.createElement('div');
+            conditionsSection.className = 'conditions-section';
+            conditionsSection.innerHTML = '<h5>Which of these aligned with the trade direction?</h5>';
+            const conditionFields = [
+                {label: 'CBC on 10 min', name: 'cbc10min', type: 'checkbox'},
+                {label: 'CBC on 1h', name: 'cbc1h', type: 'checkbox'},
+                {label: 'Took trade near 20 EMA on 2 min', name: 'near20EMA', type: 'checkbox'},
+                {label: 'Liquidity in opposite direction recently swept', name: 'liquiditySwept', type: 'checkbox'},
+                {label: 'Clear price target with good R:R', name: 'clearTarget', type: 'checkbox'},
+                {label: 'EMAs on 2 min aligned', name: 'emasAligned', type: 'checkbox'},
+            ];
+            conditionFields.forEach(f => {
+                const label = document.createElement('label');
+                const input = document.createElement('input');
+                input.type = 'checkbox';
+                input.className = 'form-check-input';
+                if (trade[f.name]) input.checked = true;
+                input.name = f.name;
+                label.appendChild(input);
+                label.append(` ${f.label}`);
+                conditionsSection.appendChild(label);
+            });
+            form.appendChild(conditionsSection);
+
             const submit = document.createElement('button');
             submit.type = 'submit';
+            submit.className = 'btn btn-success mt-3';
             submit.textContent = 'Save';
             form.appendChild(submit);
             form.onsubmit = e => {
@@ -257,11 +314,11 @@
                 const newTrade = {};
                 fields.forEach(f => {
                     const inp = form.querySelector(`[name="${f.name}"]`);
-                    if (f.type === 'checkbox') {
-                        newTrade[f.name] = inp.checked;
-                    } else {
-                        newTrade[f.name] = inp.value;
-                    }
+                    newTrade[f.name] = inp.value;
+                });
+                conditionFields.forEach(f => {
+                    const inp = form.querySelector(`[name="${f.name}"]`);
+                    newTrade[f.name] = inp.checked;
                 });
                 callback(newTrade);
             };
@@ -272,33 +329,30 @@
             const summariesDiv = document.getElementById('summaries');
             summariesDiv.innerHTML = '';
             const now = new Date();
-            // YTD
             const ytdStart = new Date(now.getFullYear(), 0, 1);
-            const ytdEnd = now;
-            const ytd = calculatePeriod(ytdStart, ytdEnd);
-            // Month
+            const ytd = calculatePeriod(ytdStart, now);
             const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-            const monthEnd = now;
-            const month = calculatePeriod(monthStart, monthEnd);
-            // Week
+            const month = calculatePeriod(monthStart, now);
             const dayOfWeek = now.getDay();
             const weekStart = new Date(now);
             weekStart.setDate(now.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
-            const weekEnd = new Date(now);
-            const week = calculatePeriod(weekStart, weekEnd);
+            const week = calculatePeriod(weekStart, now);
 
-            const h3 = document.createElement('h3');
-            h3.textContent = 'Summaries (up to today)';
-            summariesDiv.appendChild(h3);
-            const weekP = document.createElement('p');
-            weekP.textContent = `Week: P/L ${week.totalPL.toFixed(2)}, Profitable days: ${week.profDays}`;
-            summariesDiv.appendChild(weekP);
-            const monthP = document.createElement('p');
-            monthP.textContent = `Month: P/L ${month.totalPL.toFixed(2)}, Profitable days: ${month.profDays}`;
-            summariesDiv.appendChild(monthP);
-            const ytdP = document.createElement('p');
-            ytdP.textContent = `YTD: P/L ${ytd.totalPL.toFixed(2)}, Profitable days: ${ytd.profDays}`;
-            summariesDiv.appendChild(ytdP);
+            const cardBody = document.createElement('div');
+            cardBody.className = 'card-body';
+            const h5 = document.createElement('h5');
+            h5.className = 'card-title';
+            h5.textContent = 'Summaries (up to today)';
+            cardBody.appendChild(h5);
+
+            ['Week', 'Month', 'YTD'].forEach((period, i) => {
+                const data = [week, month, ytd][i];
+                const p = document.createElement('p');
+                p.className = 'card-text';
+                p.innerHTML = `<strong>${period}:</strong> P/L ${data.totalPL.toFixed(2)}, Profitable days: ${data.profDays}`;
+                cardBody.appendChild(p);
+            });
+            summariesDiv.appendChild(cardBody);
         }
 
         function calculatePeriod(start, end) {
@@ -319,8 +373,28 @@
             return { totalPL, profDays };
         }
 
+        function exportToCSV() {
+            let csv = 'Date,LongShort,Symbol,Contracts,TimeInTrade,TimeOfDay,CBC10min,CBC1h,Near20EMA,LiquiditySwept,ClearTarget,EMAsAligned,ProfitLoss,Notes,A+Setup\n';
+            Object.keys(trades).forEach(date => {
+                trades[date].forEach(trade => {
+                    const isAPlus = isAPlusSetup(trade);
+                    csv += `${date},${trade.longShort},${trade.symbol},${trade.contracts},${trade.timeInTrade},${trade.timeOfDay},${trade.cbc10min ? 'Yes' : 'No'},${trade.cbc1h ? 'Yes' : 'No'},${trade.near20EMA ? 'Yes' : 'No'},${trade.liquiditySwept ? 'Yes' : 'No'},${trade.clearTarget ? 'Yes' : 'No'},${trade.emasAligned ? 'Yes' : 'No'},${trade.profitLoss},${trade.notes.replace(/\n/g, ' ')},${isAPlus ? 'Yes' : 'No'}\n`;
+                });
+            });
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'trades.csv';
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        document.getElementById('exportBtn').onclick = exportToCSV;
+
         renderCalendar();
         renderSummaries();
     </script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
