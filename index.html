@@ -42,10 +42,20 @@
     </div>
 
     <script>
-        let trades = JSON.parse(localStorage.getItem('trades')) || {};
+        let trades = {};
+        try {
+            trades = JSON.parse(localStorage.getItem('trades')) || {};
+        } catch (e) {
+            console.error('Error loading trades from localStorage:', e);
+            trades = {};
+        }
 
         function saveTrades() {
-            localStorage.setItem('trades', JSON.stringify(trades));
+            try {
+                localStorage.setItem('trades', JSON.stringify(trades));
+            } catch (e) {
+                console.error('Error saving trades to localStorage:', e);
+            }
         }
 
         let currentYear = new Date().getFullYear();
@@ -131,7 +141,7 @@
                         if (pl > 0) className = 'table-success';
                         else if (pl < 0) className = 'table-danger';
                         cell.classList.add(className);
-                        if (count > 0 || pl !== 0) cell.classList.add('clickable');
+                        if (count > 0) cell.classList.add('clickable');
                         cell.innerHTML = `${day}<br>${count} trades<br>${pl.toFixed(2)}<br>A+: ${aPlusCount}`;
                         cell.onclick = () => showDay(dateStr);
                         day++;
@@ -180,14 +190,14 @@
                 <p><strong>Time of day:</strong> ${trade.timeOfDay}</p>
                 <p><strong>Conditions aligned with trade direction:</strong></p>
                 <ul>
-                    <li>CBC on 10 min: ${trade.cbc10min ? 'Yes' : 'No'}</li>
-                    <li>CBC on 1h: ${trade.cbc1h ? 'Yes' : 'No'}</li>
-                    <li>Took trade near 20 EMA on 2 min: ${trade.near20EMA ? 'Yes' : 'No'}</li>
-                    <li>Liquidity in opposite direction recently swept: ${trade.liquiditySwept ? 'Yes' : 'No'}</li>
-                    <li>Clear price target with good R:R: ${trade.clearTarget ? 'Yes' : 'No'}</li>
-                    <li>EMAs on 2 min aligned: ${trade.emasAligned ? 'Yes' : 'No'}</li>
+                    <li>CBC on 10 min: ${trade.cbc10min ? '✅' : '❌'}</li>
+                    <li>CBC on 1h: ${trade.cbc1h ? '✅' : '❌'}</li>
+                    <li>Took trade near 20 EMA on 2 min: ${trade.near20EMA ? '✅' : '❌'}</li>
+                    <li>Liquidity in opposite direction recently swept: ${trade.liquiditySwept ? '✅' : '❌'}</li>
+                    <li>Clear price target with good R:R: ${trade.clearTarget ? '✅' : '❌'}</li>
+                    <li>EMAs on 2 min aligned: ${trade.emasAligned ? '✅' : '❌'}</li>
                 </ul>
-                <p><strong>A+ Setup:</strong> ${isAPlus ? 'Yes' : 'No'}</p>
+                <p><strong>A+ Setup:</strong> ${isAPlus ? '✅ Yes' : '❌ No'}</p>
                 <p><strong>Profit/Loss:</strong> ${trade.profitLoss}</p>
                 <p><strong>Notes:</strong> ${trade.notes.replace(/\n/g, '<br>')}</p>
             `;
@@ -349,7 +359,7 @@
                 const data = [week, month, ytd][i];
                 const p = document.createElement('p');
                 p.className = 'card-text';
-                p.innerHTML = `<strong>${period}:</strong> P/L ${data.totalPL.toFixed(2)}, Profitable days: ${data.profDays}`;
+                p.innerHTML = `<strong>${period}:</strong> P/L ${data.totalPL.toFixed(2)}, Profitable days: ${data.profDays}, Win Rate: ${data.winRate.toFixed(1)}%, Expectancy: ${data.expectancy.toFixed(2)}`;
                 cardBody.appendChild(p);
             });
             summariesDiv.appendChild(cardBody);
@@ -358,19 +368,39 @@
         function calculatePeriod(start, end) {
             let totalPL = 0;
             let profDays = 0;
+            let wins = 0;
+            let losses = 0;
+            let totalTrades = 0;
+            let sumWins = 0;
+            let sumLosses = 0;
             let current = new Date(start);
             while (current <= end) {
                 const dateStr = current.toISOString().slice(0, 10);
                 const dayTrades = trades[dateStr];
                 if (dayTrades && dayTrades.length > 0) {
                     let dayPL = 0;
-                    dayTrades.forEach(t => dayPL += parseFloat(t.profitLoss) || 0);
+                    dayTrades.forEach(t => {
+                        const pl = parseFloat(t.profitLoss) || 0;
+                        dayPL += pl;
+                        totalTrades++;
+                        if (pl > 0) {
+                            wins++;
+                            sumWins += pl;
+                        } else if (pl < 0) {
+                            losses++;
+                            sumLosses += Math.abs(pl);
+                        }
+                    });
                     totalPL += dayPL;
                     if (dayPL > 0) profDays++;
                 }
                 current.setDate(current.getDate() + 1);
             }
-            return { totalPL, profDays };
+            const winRate = totalTrades > 0 ? (wins / totalTrades) * 100 : 0;
+            const avgWin = wins > 0 ? sumWins / wins : 0;
+            const avgLoss = losses > 0 ? sumLosses / losses : 0;
+            const expectancy = (winRate / 100 * avgWin) - ((1 - winRate / 100) * avgLoss);
+            return { totalPL, profDays, winRate, expectancy };
         }
 
         function exportToCSV() {
