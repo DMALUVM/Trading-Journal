@@ -39,34 +39,34 @@
     <button id="exportBtn">Export to CSV</button>
 
     <script>
-        console.log('App script started');
-        let trades = {};
-        try {
-            trades = JSON.parse(localStorage.getItem('trades')) || {};
-            console.log('Trades loaded from localStorage');
-        } catch (e) {
-            console.error('Error loading trades:', e);
-            trades = {};
-        }
+        let trades = JSON.parse(localStorage.getItem('trades')) || {};
 
         function saveTrades() {
-            try {
-                localStorage.setItem('trades', JSON.stringify(trades));
-                console.log('Trades saved');
-            } catch (e) {
-                console.error('Error saving trades:', e);
-            }
+            localStorage.setItem('trades', JSON.stringify(trades));
         }
 
         let currentYear = new Date().getFullYear();
         let currentMonth = new Date().getMonth();
+
+        const eventDates = new Set([
+            // FOMC
+            '2025-01-29', '2025-03-19', '2025-04-30', '2025-06-18',
+            '2025-07-30', '2025-09-17', '2025-10-29', '2025-12-10',
+            // NFP
+            '2025-02-07', '2025-03-07', '2025-04-04', '2025-05-02',
+            '2025-06-06', '2025-07-03', '2025-08-01', '2025-09-05',
+            '2025-10-03', '2025-11-07', '2025-12-05',
+            // CPI
+            '2025-01-15', '2025-02-13', '2025-03-12', '2025-04-09',
+            '2025-05-14', '2025-06-11', '2025-07-15', '2025-08-12',
+            '2025-09-11', '2025-10-15', '2025-11-12', '2025-12-10'
+        ]);
 
         function isAPlusSetup(trade) {
             return trade.cbc10min && trade.cbc1h && trade.near20EMA && trade.liquiditySwept && trade.clearTarget && trade.emasAligned;
         }
 
         function renderCalendar() {
-            console.log('Rendering calendar');
             const calendarDiv = document.getElementById('calendar');
             calendarDiv.innerHTML = '';
 
@@ -138,8 +138,12 @@
                         if (pl > 0) className = 'day-positive';
                         else if (pl < 0) className = 'day-negative';
                         cell.classList.add(className);
-                        if (count > 0) cell.classList.add('clickable');
-                        cell.innerHTML = `${day}<br>${count} trades<br>${pl.toFixed(2)}<br>A+: ${aPlusCount}`;
+                        if (count > 0 || pl !== 0) cell.classList.add('clickable');
+                        let cellContent = `${day}<br>${count} trades<br>${pl.toFixed(2)}<br>A+: ${aPlusCount}`;
+                        if (eventDates.has(dateStr)) {
+                            cellContent += '<br>🚨';
+                        }
+                        cell.innerHTML = cellContent;
                         cell.onclick = () => showDay(dateStr);
                         day++;
                     }
@@ -150,11 +154,9 @@
             }
             table.appendChild(tbody);
             calendarDiv.appendChild(table);
-            console.log('Calendar rendered');
         }
 
         function showDay(date) {
-            console.log('Showing day:', date);
             const dayView = document.getElementById('day-view');
             dayView.innerHTML = '';
             const h2 = document.createElement('h2');
@@ -164,6 +166,7 @@
             const dayTrades = trades[date] || [];
             dayTrades.forEach((trade, index) => {
                 const tradeDiv = document.createElement('div');
+                tradeDiv.id = `trade-${index}`;
                 renderTradeDetails(tradeDiv, trade, date, index);
                 dayView.appendChild(tradeDiv);
             });
@@ -319,7 +322,6 @@
         }
 
         function renderSummaries() {
-            console.log('Rendering summaries');
             const summariesDiv = document.getElementById('summaries');
             summariesDiv.innerHTML = '';
             const now = new Date();
@@ -405,7 +407,6 @@
 
         renderCalendar();
         renderSummaries();
-        console.log('App fully loaded');
     </script>
 </body>
 </html>
